@@ -387,3 +387,124 @@
   background-color: #e2e8f0;
   color: #0f172a;
 }
+
+.quality-disclaimer {
+  font-size: 0.82rem;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 0 0 14px;
+}
+
+.quality-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.quality-badge.USABLE {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+.quality-badge.DEGRADED {
+  background-color: #fef3c7;
+  color: #b45309;
+}
+
+.quality-badge.UNUSABLE {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.quality-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.btn-analyze {
+  background-color: #0f766e;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-analyze:disabled {
+  background-color: #99f6e4;
+  cursor: not-allowed;
+}
+
+.quality-inline-status {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #b45309;
+}
+
+.quality-inline-error {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #b91c1c;
+  max-width: 220px;
+}
+
+.inspection-row td {
+  background: #f8fafc;
+}
+
+.inspection-panel h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  color: #0f172a;
+}
+
+.inspection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 16px;
+  margin-bottom: 12px;
+}
+
+.inspection-grid span {
+  display: block;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.inspection-grid strong {
+  font-size: 0.85rem;
+  color: #0f172a;
+}
+
+.inspection-flags {
+  font-size: 0.82rem;
+  margin-bottom: 8px;
+}
+
+.flag-chip {
+  display: inline-block;
+  margin-left: 6px;
+  margin-bottom: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.inspection-diagnostic {
+  font-size: 0.82rem;
+  color: #334155;
+  margin: 0;
+}

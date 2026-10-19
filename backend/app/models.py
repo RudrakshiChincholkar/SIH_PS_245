@@ -4,10 +4,12 @@ from sqlalchemy import (
     String,
     Integer,
     BigInteger,
+    Float,
     Text,
     DateTime,
     Date,
     Time,
+    JSON,
     ForeignKey,
     UniqueConstraint,
 )
@@ -39,6 +41,12 @@ class Upload(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
 
     video_metadata = relationship("VideoMetadata", back_populates="upload", uselist=False, cascade="all, delete-orphan")
+    quality_assessment = relationship(
+        "VideoQualityAssessment",
+        back_populates="upload",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
     attendance_records = relationship("AttendanceRecord", back_populates="upload", cascade="all, delete-orphan")
     schedule_records = relationship("ScheduleRecord", back_populates="upload", cascade="all, delete-orphan")
 
@@ -107,3 +115,46 @@ class ScheduleRecord(Base):
     __table_args__ = (
         UniqueConstraint("batch_id", "classroom_id", "class_date", "start_time", name="uq_schedule_slot"),
     )
+
+
+class VideoQualityAssessment(Base):
+    """
+    Latest footage-legibility assessment for a registered video upload.
+
+    One row per upload (updated in place on repeat analysis) so results cannot
+    diverge across duplicate records. This stores visual quality only and is
+    never occupancy or attendance evidence.
+    """
+    __tablename__ = "video_quality_assessments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    upload_id = Column(
+        String(36),
+        ForeignKey("uploads.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    processing_status = Column(String(30), nullable=False, default="PENDING", index=True)
+    overall_quality = Column(String(20), nullable=True, index=True)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    fps = Column(Float, nullable=True)
+    reported_frame_count = Column(Integer, nullable=True)
+    duration_seconds = Column(Float, nullable=True)
+    sample_interval_seconds = Column(Float, nullable=False)
+    samples_attempted = Column(Integer, nullable=False, default=0)
+    samples_successful = Column(Integer, nullable=False, default=0)
+    samples_failed = Column(Integer, nullable=False, default=0)
+    decode_success_ratio = Column(Float, nullable=True)
+    avg_blur_score = Column(Float, nullable=True)
+    avg_luminance = Column(Float, nullable=True)
+    avg_temporal_difference = Column(Float, nullable=True)
+    quality_flags = Column(JSON, nullable=False, default=list)
+    diagnostic_message = Column(Text, nullable=True)
+    analysis_count = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+    upload = relationship("Upload", back_populates="quality_assessment")

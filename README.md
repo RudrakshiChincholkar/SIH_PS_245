@@ -3,8 +3,8 @@
 
 Privacy-preserving automated attendance verification for government-funded skill-development training centres. Compares classroom physical occupancy estimated from CCTV with biometric attendance records from AEBAS to detect proxy attendance, ghost beneficiaries, and discrepancy patterns.
 
-> **Current Implementation Phase**: **Part 2 — Input Ingestion**.  
-> Video streaming & magic-byte validation, mock AEBAS attendance CSV import, batch schedule CSV import, and upload registry are fully operational. Computer-vision pipelines (YOLO, person counting) belong to subsequent phases.
+> **Current Implementation Phase**: **Part 3 — Recorded video quality assessment**.
+> Parts 1–2 (health checks, video/CSV ingestion, upload registry) remain operational. Part 3 decodes registered recordings, samples frames, and stores footage-legibility results. It does **not** count people or infer occupancy. Person detection belongs to later phases.
 
 ---
 
@@ -16,11 +16,13 @@ sih-attendance-monitoring/
 │   ├── app/
 │   │   ├── config.py              # Environment configuration & validation
 │   │   ├── database.py            # PostgreSQL SQLAlchemy engine & connectivity checks
-│   │   ├── models.py              # Upload, VideoMetadata, AttendanceRecord, ScheduleRecord
+│   │   ├── models.py              # Upload, VideoMetadata, Attendance, Schedule, VideoQualityAssessment
 │   │   ├── schemas.py             # Pydantic schemas (no server path leakage)
 │   │   ├── validators.py          # Chunked video streaming, magic bytes & CSV validators
+│   │   ├── video_processor.py     # Incremental decode, sampling, quality heuristics
 │   │   ├── routes/
-│   │   │   └── ingest.py          # Ingestion endpoints (/api/ingest/*)
+│   │   │   ├── ingest.py          # Ingestion endpoints (/api/ingest/*)
+│   │   │   └── videos.py          # Quality analysis endpoints (/api/videos/*)
 │   │   └── main.py                # FastAPI routes, CORS, and health checks
 │   ├── tests/
 │   │   ├── conftest.py            # Pytest test fixtures (isolated test database)
@@ -29,7 +31,8 @@ sih-attendance-monitoring/
 │   │   ├── test_ingest_video.py   # Streaming, magic bytes & video upload tests
 │   │   ├── test_ingest_attendance.py # All-or-nothing CSV, IST->UTC, & duplicate tests
 │   │   ├── test_ingest_schedule.py   # Schedule validation & upsert tests
-│   │   └── test_ingest_uploads.py    # Registry listing & template download tests
+│   │   ├── test_ingest_uploads.py    # Registry listing & template download tests
+│   │   └── test_video_quality.py     # Sampling, quality classes, persistence, API tests
 │   ├── requirements.txt           # Pinned Python dependencies
 │   ├── pytest.ini                 # Pytest test suite configuration
 │   └── .env.example               # Backend environment template
@@ -138,9 +141,28 @@ cd backend
 venv/bin/pytest -v
 ```
 
-### Test Suite Highlights (25 Tests):
+### Test Suite Highlights:
 - **Health diagnostics**: Verifies backend and database health checks.
 - **Video ingestion**: Validates chunked streaming, 413 cutoff, magic byte checks, 409 duplicates, and file cleanup.
 - **Attendance ingestion**: Tests all-or-nothing rollback, rejection audit persistence, and IST-to-UTC conversion (`2026-10-19 09:30:00 IST` == `2026-10-19 04:00:00 UTC`).
 - **Schedule ingestion**: Tests same-day constraints, conflicting row rejection, and deterministic upsert.
 - **Upload registry**: Tests pagination, filters, and CSV template downloads.
+- **Video quality (Part 3)**: Synthetic textured, dark, blurred, and frozen clips; sampling intervals; corrupt/missing files; invalid IDs/intervals; persistence, repeat analysis, rollback, and capture cleanup. Tests never use real CCTV recordings.
+
+---
+
+## 6. Part 3 Video Quality Rules (preliminary heuristics)
+
+Analysis uses OpenCV (`opencv-python-headless`) on a resized 320×180 grayscale view, sampling at a configurable interval (default **10 seconds**). Thresholds are starting points, not camera-certification standards:
+
+| Heuristic | Default | Flag / class |
+| --- | --- | --- |
+| Laplacian variance below 100 | `POTENTIAL_BLUR` | DEGRADED |
+| Mean luminance below 40 | `LOW_LIGHT` | DEGRADED |
+| Mean luminance above 230 | `OVEREXPOSURE` | DEGRADED |
+| Mean luminance at or below 8 | `COMPLETELY_BLACK` | UNUSABLE |
+| Sustained near-identical samples (MAD below 1.0 on ≥3 pairs) | `POSSIBLE_FROZEN_FOOTAGE` | DEGRADED |
+| Decode-success ratio below 0.8 | `LOW_DECODE_RELIABILITY` | DEGRADED |
+| No decoded frames / unreadable input | `UNREADABLE` | UNUSABLE |
+
+A single identical frame pair does **not** conclude that a camera is frozen. Unusable or degraded footage must **never** be treated as zero classroom occupancy.

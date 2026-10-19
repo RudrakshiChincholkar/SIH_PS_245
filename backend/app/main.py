@@ -8,6 +8,7 @@ from app.config import settings
 from app.database import engine, get_db_health
 from app.models import Base
 from app.routes.ingest import router as ingest_router
+from app.routes.videos import router as videos_router
 
 # Configure basic logging
 logging.basicConfig(
@@ -45,6 +46,7 @@ app.add_middleware(
 
 # Mount Ingestion Router
 app.include_router(ingest_router)
+app.include_router(videos_router)
 
 
 

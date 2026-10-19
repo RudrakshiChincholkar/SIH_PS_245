@@ -39,6 +39,19 @@ class Settings(BaseSettings):
     ALLOWED_VIDEO_EXTENSIONS: List[str] = [".mp4", ".avi", ".mov"]
     UPLOAD_DIR: str = "data"
 
+    # Part 3 video quality sampling (seconds). Bounds reject unbounded client values.
+    VIDEO_SAMPLE_INTERVAL_SECONDS: float = 10.0
+    VIDEO_SAMPLE_INTERVAL_MIN: float = 0.5
+    VIDEO_SAMPLE_INTERVAL_MAX: float = 60.0
+    VIDEO_QUALITY_BLUR_THRESHOLD: float = 100.0
+    VIDEO_QUALITY_LOW_LIGHT_THRESHOLD: float = 40.0
+    VIDEO_QUALITY_OVEREXPOSURE_THRESHOLD: float = 230.0
+    VIDEO_QUALITY_NEAR_IDENTICAL_MAD_THRESHOLD: float = 1.0
+    VIDEO_QUALITY_MIN_DECODE_SUCCESS_RATIO: float = 0.8
+    VIDEO_QUALITY_BLACK_LUMINANCE_THRESHOLD: float = 8.0
+    VIDEO_QUALITY_FROZEN_MIN_IDENTICAL_PAIRS: int = 3
+    VIDEO_QUALITY_FROZEN_IDENTICAL_PAIR_RATIO: float = 0.85
+
     # Test Database settings (isolated database for automated tests)
     TEST_DB_NAME: Optional[str] = "sih_attendance_test"
     TEST_DATABASE_URL: Optional[str] = None

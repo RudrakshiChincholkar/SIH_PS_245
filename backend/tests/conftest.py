@@ -28,8 +28,6 @@ def setup_test_database():
     """
     Base.metadata.create_all(bind=test_engine)
     yield
-    # Cleanup tables after test session completes
-    Base.metadata.drop_all(bind=test_engine)
 
 
 @pytest.fixture
@@ -45,7 +43,10 @@ def db_session():
         session.close()
         # Clean up test data
         with test_engine.begin() as conn:
-            conn.execute(text("TRUNCATE TABLE schedule_records, attendance_records, video_metadata, uploads CASCADE;"))
+            conn.execute(text(
+                "TRUNCATE TABLE video_quality_assessments, schedule_records, "
+                "attendance_records, video_metadata, uploads CASCADE;"
+            ))
 
 
 @pytest.fixture(autouse=True)

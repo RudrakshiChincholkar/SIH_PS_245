@@ -182,3 +182,62 @@ Returns metadata for a specific upload by UUID. Returns HTTP 404 if not found.
 
 ### `GET /api/ingest/templates/attendance` & `GET /api/ingest/templates/schedule`
 Downloadable CSV template endpoints providing reference column headers and example rows.
+
+---
+
+## 3. Video Quality Assessment (Part 3)
+
+Footage-legibility analysis only. These endpoints never count people, estimate occupancy, or treat unreadable footage as an empty classroom.
+
+The file is resolved from the upload registry. Client-supplied filesystem paths are not accepted. Responses never include internal paths.
+
+### `POST /api/videos/{upload_id}/process`
+Decode a registered video, sample frames, persist (or update) the quality assessment, and return the result.
+
+**Query parameters:**
+- `sample_interval_seconds` (optional, default `10`): must be positive and between `0.5` and `60`.
+
+**Response (HTTP 200 OK):**
+```json
+{
+  "message": "Video quality assessment completed with status USABLE.",
+  "assessment": {
+    "upload_id": "c1f71a93-8b7c-473d-82d2-5a21db53b01a",
+    "processing_status": "COMPLETED",
+    "overall_quality": "USABLE",
+    "width": 320,
+    "height": 180,
+    "fps": 10.0,
+    "reported_frame_count": 50,
+    "duration_seconds": 5.0,
+    "sample_interval_seconds": 1.0,
+    "samples_attempted": 5,
+    "samples_successful": 5,
+    "samples_failed": 0,
+    "decode_success_ratio": 1.0,
+    "avg_blur_score": 412.5,
+    "avg_luminance": 118.2,
+    "avg_temporal_difference": 12.4,
+    "quality_flags": [],
+    "diagnostic_message": "Sampled frames decoded with sharpness, luminance, temporal variation, and decode reliability within configured heuristic bounds. Quality assessment measures footage legibility only. It does not count people or infer zero occupancy.",
+    "analysis_count": 1,
+    "created_at": "2026-10-19T06:30:00Z",
+    "completed_at": "2026-10-19T06:30:01Z",
+    "safety_note": "Quality assessment measures footage legibility only. It does not count people or infer zero occupancy."
+  }
+}
+```
+
+`overall_quality` is one of `USABLE`, `DEGRADED`, or `UNUSABLE`. Repeat analysis updates the same assessment row (`analysis_count` increments).
+
+**Errors:**
+- `HTTP 400 Bad Request`: upload is not a video, stored filename is invalid, or `sample_interval_seconds` is out of range.
+- `HTTP 404 Not Found`: no upload with the given ID.
+- `HTTP 422 Unprocessable Entity`: the registered file is missing from disk. `processing_status` is persisted as `FAILED` (not a successful assessment).
+- `HTTP 500 Internal Server Error`: processing or database persistence failed (transaction rolled back).
+
+### `GET /api/videos/{upload_id}/quality`
+Return the stored quality assessment.
+
+**Errors:**
+- `HTTP 404 Not Found`: the upload does not exist, or no assessment has been stored yet.

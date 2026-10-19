@@ -82,3 +82,14 @@ Part 2 introduces the secure multi-modal input ingestion layer:
 - **`video_metadata`**: 1-to-1 with `uploads`. Stores `batch_id`, `classroom_id`, `recording_date_time`, `file_format`. Unique on `(batch_id, classroom_id, recording_date_time)`.
 - **`attendance_records`**: Many-to-1 with `uploads`. Stores `batch_id`, `person_ref`, `punch_in` (TIMESTAMPTZ UTC), `punch_out` (TIMESTAMPTZ UTC). Unique on `(batch_id, person_ref, punch_in)`.
 - **`schedule_records`**: Many-to-1 with `uploads`. Stores `batch_id`, `classroom_id`, `class_date`, `start_time`, `end_time`, `enrolled_count`. Unique on `(batch_id, classroom_id, class_date, start_time)`.
+- **`video_quality_assessments`**: 1-to-1 with `uploads`. Stores processing status, overall quality (`USABLE` / `DEGRADED` / `UNUSABLE`), metadata, sample counts, decode ratio, blur/luminance scores, JSON quality flags, diagnostics, and completion time. Repeat analysis updates the same row.
+
+---
+
+## 6. Part 3 Video Quality Assessment
+
+Part 3 adds an incremental decoder (`backend/app/video_processor.py`). The file path is resolved from the upload record and must remain inside the configured upload directory; clients cannot supply a filesystem path.
+
+OpenCV reads frames sequentially (bounded memory), samples on a time grid (default 10 seconds), and computes Laplacian variance, mean grayscale luminance, and mean absolute difference between consecutive samples on a 320×180 grayscale canvas. Heuristics are preliminary and content-dependent.
+
+Safety rule: failed, dark, blurred, frozen, or unreadable footage is missing visual evidence. It is never occupancy = 0. Person detection is out of scope for Part 3.

@@ -128,3 +128,30 @@ In `backend/.env`:
 TEST_DB_NAME="sih_attendance_test"
 ```
 Tests automatically read this configuration without exposing credentials on the command line.
+
+### Video-quality schema migration
+
+The application startup's `create_all` creates missing tables but does not add columns to an existing table. Run this idempotent migration from the repository's `backend/` directory using the application's configured database settings in `.env`:
+
+```bash
+cd /home/rudrakshi/sih-attendance-monitoring/backend
+venv/bin/python scripts/migrate_video_quality_assessment.py
+```
+
+The migration inspects every `VideoQualityAssessment` model column, adds any missing nullable columns using the model's SQLAlchemy type, and preserves existing rows. It never drops or recreates a table. It refuses to guess how to populate a missing non-nullable column.
+
+Verify the configured application database now matches the model:
+
+```bash
+venv/bin/python scripts/migrate_video_quality_assessment.py --check
+```
+
+For direct PostgreSQL verification, this read-only query should return `avg_temporal_difference` with `is_nullable = YES` and `data_type = double precision`:
+
+```sql
+SELECT column_name, data_type, is_nullable
+FROM information_schema.columns
+WHERE table_schema = current_schema()
+	AND table_name = 'video_quality_assessments'
+	AND column_name = 'avg_temporal_difference';
+```

@@ -31,6 +31,12 @@ function App() {
   const [uploads, setUploads] = useState([]);
   const [uploadsLoading, setUploadsLoading] = useState(false);
 
+  // Part 3 video quality inspection (keyed by upload id)
+  const [qualityById, setQualityById] = useState({});
+  const [qualityBusy, setQualityBusy] = useState({});
+  const [qualityError, setQualityError] = useState({});
+  const [inspectId, setInspectId] = useState(null);
+
   // Fetch Health
   const checkHealth = useCallback(async () => {
     setIsHealthRefreshing(true);
@@ -62,6 +68,32 @@ function App() {
     setIsHealthRefreshing(false);
   }, []);
 
+  const extractErrorMessage = (data, fallback) => {
+    if (!data) return fallback;
+    if (typeof data.detail === 'string') return data.detail;
+    if (data.detail && typeof data.detail === 'object' && data.detail.message) {
+      return data.detail.message;
+    }
+    if (data.message) return data.message;
+    return fallback;
+  };
+
+  const fetchQualityForVideos = useCallback(async (items) => {
+    const videos = (items || []).filter((item) => item.upload_type === 'video');
+    await Promise.all(
+      videos.map(async (item) => {
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/videos/${item.id}/quality`);
+          if (!res.ok) return;
+          const assessment = await res.json();
+          setQualityById((prev) => ({ ...prev, [item.id]: assessment }));
+        } catch {
+          // 404 before first analysis is expected
+        }
+      })
+    );
+  }, []);
+
   // Fetch Uploads Registry
   const fetchUploads = useCallback(async () => {
     setUploadsLoading(true);
@@ -69,14 +101,47 @@ function App() {
       const res = await fetch(`${API_BASE_URL}/api/ingest/uploads?limit=25`);
       if (res.ok) {
         const data = await res.json();
-        setUploads(data.items || []);
+        const items = data.items || [];
+        setUploads(items);
+        fetchQualityForVideos(items);
       }
     } catch (err) {
       console.error('Failed to load uploads:', err);
     } finally {
       setUploadsLoading(false);
     }
-  }, []);
+  }, [fetchQualityForVideos]);
+
+  const analyzeVideoQuality = async (uploadId) => {
+    setQualityBusy((prev) => ({ ...prev, [uploadId]: true }));
+    setQualityError((prev) => ({ ...prev, [uploadId]: null }));
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/videos/${uploadId}/process`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setQualityById((prev) => ({ ...prev, [uploadId]: data.assessment }));
+        setInspectId(uploadId);
+      } else {
+        const assessment = data.detail && data.detail.assessment;
+        if (assessment) {
+          setQualityById((prev) => ({ ...prev, [uploadId]: assessment }));
+        }
+        setQualityError((prev) => ({
+          ...prev,
+          [uploadId]: extractErrorMessage(data, `Analysis failed with HTTP ${res.status}`),
+        }));
+      }
+    } catch (err) {
+      setQualityError((prev) => ({
+        ...prev,
+        [uploadId]: err.message || 'Network error while analyzing video quality.',
+      }));
+    } finally {
+      setQualityBusy((prev) => ({ ...prev, [uploadId]: false }));
+    }
+  };
 
   useEffect(() => {
     checkHealth();
@@ -423,6 +488,10 @@ function App() {
               </button>
             </div>
 
+            <p className="quality-disclaimer">
+              Quality assessment measures footage legibility only. It does not count people or infer zero occupancy.
+            </p>
+
             <div className="table-responsive">
               <table className="custom-table">
                 <thead>
@@ -433,49 +502,135 @@ function App() {
                     <th>Size / Rows</th>
                     <th>Uploaded At</th>
                     <th>Status</th>
+                    <th>Footage Quality</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {uploads.length === 0 ? (
                     <tr>
-                      <td colSpan="6" style={{ textAlign: 'center', color: '#64748b', padding: '24px' }}>
+                      <td colSpan="8" style={{ textAlign: 'center', color: '#64748b', padding: '24px' }}>
                         No uploads recorded yet. Upload a video or CSV above to begin.
                       </td>
                     </tr>
                   ) : (
-                    uploads.map((u) => (
-                      <tr key={u.id}>
-                        <td>
-                          <span className={`tag-badge ${u.upload_type}`}>
-                            {u.upload_type.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td>
-                          <strong>{u.original_filename}</strong>
-                        </td>
-                        <td>
-                          {u.video_metadata ? (
-                            <span>
-                              {u.video_metadata.batch_id} &bull; {u.video_metadata.classroom_id}
-                            </span>
-                          ) : (
-                            <span style={{ color: '#94a3b8' }}>&mdash;</span>
+                    uploads.map((u) => {
+                      const quality = qualityById[u.id];
+                      const busy = Boolean(qualityBusy[u.id]);
+                      const error = qualityError[u.id];
+                      const inspecting = inspectId === u.id && quality;
+                      return (
+                        <React.Fragment key={u.id}>
+                          <tr>
+                            <td>
+                              <span className={`tag-badge ${u.upload_type}`}>
+                                {u.upload_type.replace('_', ' ')}
+                              </span>
+                            </td>
+                            <td>
+                              <strong>{u.original_filename}</strong>
+                            </td>
+                            <td>
+                              {u.video_metadata ? (
+                                <span>
+                                  {u.video_metadata.batch_id} &bull; {u.video_metadata.classroom_id}
+                                </span>
+                              ) : (
+                                <span style={{ color: '#94a3b8' }}>&mdash;</span>
+                              )}
+                            </td>
+                            <td>
+                              {u.upload_type === 'video'
+                                ? `${(u.file_size_bytes / (1024 * 1024)).toFixed(2)} MB`
+                                : `${u.row_count} records`}
+                            </td>
+                            <td>{new Date(u.created_at).toLocaleString()}</td>
+                            <td>
+                              <span className={`status-pill ${u.status}`}>
+                                <span className="status-dot"></span>
+                                {u.status}
+                              </span>
+                            </td>
+                            <td>
+                              {quality && quality.overall_quality ? (
+                                <span className={`quality-badge ${quality.overall_quality}`}>
+                                  {quality.overall_quality}
+                                </span>
+                              ) : quality && quality.processing_status === 'FAILED' ? (
+                                <span className="quality-badge UNUSABLE">FAILED</span>
+                              ) : (
+                                <span style={{ color: '#94a3b8' }}>&mdash;</span>
+                              )}
+                              {busy && <div className="quality-inline-status">Analyzing…</div>}
+                              {error && <div className="quality-inline-error">{error}</div>}
+                            </td>
+                            <td>
+                              {u.upload_type === 'video' ? (
+                                <div className="quality-actions">
+                                  <button
+                                    type="button"
+                                    className="btn-analyze"
+                                    onClick={() => analyzeVideoQuality(u.id)}
+                                    disabled={busy}
+                                  >
+                                    {busy ? 'Analyzing…' : 'Analyze Video Quality'}
+                                  </button>
+                                  {quality && (
+                                    <button
+                                      type="button"
+                                      className="btn-template"
+                                      onClick={() => setInspectId(inspecting ? null : u.id)}
+                                    >
+                                      {inspecting ? 'Hide Inspection' : 'Inspect'}
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <span style={{ color: '#94a3b8' }}>&mdash;</span>
+                              )}
+                            </td>
+                          </tr>
+                          {inspecting && (
+                            <tr className="inspection-row">
+                              <td colSpan="8">
+                                <div className="inspection-panel">
+                                  <h3>Video quality inspection</h3>
+                                  <p className="quality-disclaimer">
+                                    Quality assessment measures footage legibility only. It does not count people or infer zero occupancy.
+                                  </p>
+                                  <div className="inspection-grid">
+                                    <div><span>Resolution</span><strong>{quality.width || '—'} × {quality.height || '—'}</strong></div>
+                                    <div><span>FPS</span><strong>{quality.fps != null ? Number(quality.fps).toFixed(2) : '—'}</strong></div>
+                                    <div><span>Reported frames</span><strong>{quality.reported_frame_count ?? '—'}</strong></div>
+                                    <div><span>Duration (s)</span><strong>{quality.duration_seconds != null ? Number(quality.duration_seconds).toFixed(2) : '—'}</strong></div>
+                                    <div><span>Sample interval (s)</span><strong>{quality.sample_interval_seconds}</strong></div>
+                                    <div><span>Samples attempted / ok / failed</span><strong>{quality.samples_attempted} / {quality.samples_successful} / {quality.samples_failed}</strong></div>
+                                    <div><span>Decode success ratio</span><strong>{quality.decode_success_ratio != null ? Number(quality.decode_success_ratio).toFixed(3) : '—'}</strong></div>
+                                    <div><span>Avg blur (Laplacian var.)</span><strong>{quality.avg_blur_score != null ? Number(quality.avg_blur_score).toFixed(2) : '—'}</strong></div>
+                                    <div><span>Avg luminance</span><strong>{quality.avg_luminance != null ? Number(quality.avg_luminance).toFixed(2) : '—'}</strong></div>
+                                    <div><span>Mean temporal difference</span><strong>{quality.avg_temporal_difference != null ? Number(quality.avg_temporal_difference).toFixed(2) : '—'}</strong></div>
+                                    <div><span>Processing</span><strong>{quality.processing_status}</strong></div>
+                                  </div>
+                                  <div className="inspection-flags">
+                                    <span>Quality flags:</span>
+                                    {(quality.quality_flags || []).length === 0 ? (
+                                      <em> none</em>
+                                    ) : (
+                                      quality.quality_flags.map((flag) => (
+                                        <span key={flag} className="flag-chip">{flag}</span>
+                                      ))
+                                    )}
+                                  </div>
+                                  {quality.diagnostic_message && (
+                                    <p className="inspection-diagnostic">{quality.diagnostic_message}</p>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
                           )}
-                        </td>
-                        <td>
-                          {u.upload_type === 'video'
-                            ? `${(u.file_size_bytes / (1024 * 1024)).toFixed(2)} MB`
-                            : `${u.row_count} records`}
-                        </td>
-                        <td>{new Date(u.created_at).toLocaleString()}</td>
-                        <td>
-                          <span className={`status-pill ${u.status}`}>
-                            <span className="status-dot"></span>
-                            {u.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))
+                        </React.Fragment>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
