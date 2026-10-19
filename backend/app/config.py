@@ -34,6 +34,15 @@ class Settings(BaseSettings):
     # Database connectivity check timeout in seconds
     DB_CHECK_TIMEOUT_SECONDS: float = 3.0
 
+    # Ingestion & Video upload settings
+    MAX_VIDEO_SIZE_MB: int = 200
+    ALLOWED_VIDEO_EXTENSIONS: List[str] = [".mp4", ".avi", ".mov"]
+    UPLOAD_DIR: str = "data"
+
+    # Test Database settings (isolated database for automated tests)
+    TEST_DB_NAME: Optional[str] = "sih_attendance_test"
+    TEST_DATABASE_URL: Optional[str] = None
+
     model_config = SettingsConfigDict(
         env_file=str(Path(__file__).resolve().parent.parent / ".env"),
         env_file_encoding="utf-8",
@@ -52,6 +61,55 @@ class Settings(BaseSettings):
                     pass
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @field_validator("ALLOWED_VIDEO_EXTENSIONS", mode="before")
+    @classmethod
+    def parse_allowed_extensions(cls, value):
+        if isinstance(value, str):
+            value = value.strip()
+            if value.startswith("[") and value.endswith("]"):
+                try:
+                    return json.loads(value)
+                except Exception:
+                    pass
+            return [ext.strip().lower() for ext in value.split(",") if ext.strip()]
+        return [ext.lower() for ext in value]
+
+    @property
+    def base_dir(self) -> Path:
+        """Returns the backend root directory."""
+        return Path(__file__).resolve().parent.parent
+
+    @property
+    def video_upload_dir(self) -> Path:
+        """Returns the dedicated directory for storing videos and ensures it exists."""
+        upload_path = Path(self.UPLOAD_DIR)
+        target = (upload_path if upload_path.is_absolute() else self.base_dir / upload_path) / "videos"
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+
+    @property
+    def csv_upload_dir(self) -> Path:
+        """Returns the dedicated directory for storing raw CSV archives and ensures it exists."""
+        upload_path = Path(self.UPLOAD_DIR)
+        target = (upload_path if upload_path.is_absolute() else self.base_dir / upload_path) / "csvs"
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+
+
+    @property
+    def test_sync_database_url(self) -> str:
+        """
+        Construct or return the test database URL for running isolated automated tests.
+        Never print credentials in logs or commands.
+        """
+        if self.TEST_DATABASE_URL:
+            return self.TEST_DATABASE_URL
+        
+        test_db = self.TEST_DB_NAME or f"{self.DB_NAME}_test"
+        encoded_password = quote_plus(self.DB_PASSWORD) if self.DB_PASSWORD else ""
+        user_part = f"{self.DB_USER}:{encoded_password}@" if self.DB_USER else ""
+        return f"postgresql+psycopg2://{user_part}{self.DB_HOST}:{self.DB_PORT}/{test_db}"
 
     @property
     def sync_database_url(self) -> str:

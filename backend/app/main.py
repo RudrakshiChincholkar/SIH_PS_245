@@ -5,7 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.database import get_db_health
+from app.database import engine, get_db_health
+from app.models import Base
+from app.routes.ingest import router as ingest_router
 
 # Configure basic logging
 logging.basicConfig(
@@ -13,6 +15,13 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger("attendance_backend")
+
+# Create tables in PostgreSQL safely on startup if they don't already exist
+try:
+    Base.metadata.create_all(bind=engine)
+    logger.info("Database tables initialized successfully.")
+except Exception as e:
+    logger.warning(f"Database table initialization deferred or failed: {e}")
 
 # Initialize FastAPI application
 app = FastAPI(
@@ -33,6 +42,10 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Mount Ingestion Router
+app.include_router(ingest_router)
+
 
 
 @app.get("/", tags=["Root"])

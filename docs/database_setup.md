@@ -108,3 +108,23 @@ DB_NAME="sih_attendance"
 
 ### Issue 3: `FATAL: database "sih_attendance" does not exist`
 - **Fix**: Re-run the `CREATE DATABASE sih_attendance OWNER sih_user;` command as the postgres superuser.
+
+---
+
+## 6. Isolated Test Database (`sih_attendance_test`)
+
+An isolated test database is configured to ensure automated tests run safely without corrupting production or development records:
+
+```sql
+-- Create isolated test database owned by sih_user
+CREATE DATABASE sih_attendance_test OWNER sih_user;
+GRANT ALL PRIVILEGES ON DATABASE sih_attendance_test TO sih_user;
+\c sih_attendance_test
+GRANT ALL ON SCHEMA public TO sih_user;
+```
+
+In `backend/.env`:
+```env
+TEST_DB_NAME="sih_attendance_test"
+```
+Tests automatically read this configuration without exposing credentials on the command line.

@@ -57,3 +57,28 @@ In Part 1, the core foundation is established:
 - **Automated test suite**:
   - Unit tests with dependency injection for decoupled testing.
   - Integration tests for verifying real PostgreSQL instances.
+
+---
+
+## 5. Part 2 Input Ingestion Architecture
+
+Part 2 introduces the secure multi-modal input ingestion layer:
+
+```
+[ CCTV Video (.mp4, .avi, .mov) ]  -->  Chunked Streaming (<= 200MB) & Magic Bytes Check  -->  backend/data/videos/<uuid>.<ext>
+                                                                                                        |
+                                                                                                        v
+[ AEBAS Attendance CSV ]           -->  Full Pre-Validation (IST -> UTC) & All-or-Nothing  -->  attendance_records
+                                                                                                        |
+                                                                                                        v
+[ Batch Schedule CSV ]             -->  Full Pre-Validation (Daytime) & Upsert Logic      -->  schedule_records
+                                                                                                        |
+                                                                                                        v
+                                                                                                  uploads (Master Registry)
+```
+
+### Database Entity Relationships:
+- **`uploads`**: Master registry storing `id` (UUID), `upload_type`, `original_filename`, `file_size_bytes`, `status` (`VALIDATED`, `REJECTED`), `row_count`, `error_message`, `created_at`.
+- **`video_metadata`**: 1-to-1 with `uploads`. Stores `batch_id`, `classroom_id`, `recording_date_time`, `file_format`. Unique on `(batch_id, classroom_id, recording_date_time)`.
+- **`attendance_records`**: Many-to-1 with `uploads`. Stores `batch_id`, `person_ref`, `punch_in` (TIMESTAMPTZ UTC), `punch_out` (TIMESTAMPTZ UTC). Unique on `(batch_id, person_ref, punch_in)`.
+- **`schedule_records`**: Many-to-1 with `uploads`. Stores `batch_id`, `classroom_id`, `class_date`, `start_time`, `end_time`, `enrolled_count`. Unique on `(batch_id, classroom_id, class_date, start_time)`.

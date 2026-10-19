@@ -64,3 +64,10 @@ dist-ssr/
 *.log
 *.sqlite
 *.sqlite3
+
+# Uploaded data and media files - NEVER COMMIT
+data/
+*.mp4
+*.avi
+*.mov
+
