@@ -18,6 +18,7 @@ python-multipart==0.0.9
 # 1.26.x wheel known to work with Python 3.10 and this OpenCV build.
 numpy==1.26.4
 opencv-python-headless==4.10.0.84
+ultralytics==8.3.40
 
 # Testing
 pytest==8.1.1

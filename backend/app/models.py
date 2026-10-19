@@ -47,6 +47,16 @@ class Upload(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    quality_samples = relationship(
+        "VideoQualitySample",
+        back_populates="upload",
+        cascade="all, delete-orphan",
+    )
+    occupancy_frames = relationship(
+        "OccupancyFrame",
+        back_populates="upload",
+        cascade="all, delete-orphan",
+    )
     attendance_records = relationship("AttendanceRecord", back_populates="upload", cascade="all, delete-orphan")
     schedule_records = relationship("ScheduleRecord", back_populates="upload", cascade="all, delete-orphan")
 
@@ -158,3 +168,59 @@ class VideoQualityAssessment(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
 
     upload = relationship("Upload", back_populates="quality_assessment")
+
+
+class VideoQualitySample(Base):
+    """Legibility result for one timestamp sampled during Part 3 decoding."""
+    __tablename__ = "video_quality_samples"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    upload_id = Column(
+        String(36),
+        ForeignKey("uploads.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sample_index = Column(Integer, nullable=False)
+    timestamp_seconds = Column(Float, nullable=False)
+    status = Column(String(20), nullable=False, index=True)
+    blur_score = Column(Float, nullable=True)
+    luminance = Column(Float, nullable=True)
+    quality_flags = Column(JSON, nullable=False, default=list)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    upload = relationship("Upload", back_populates="quality_samples")
+
+    __table_args__ = (
+        UniqueConstraint("upload_id", "sample_index", name="uq_quality_upload_sample"),
+    )
+
+
+class OccupancyFrame(Base):
+    """Person detections for one sampled frame; never contains identities."""
+    __tablename__ = "occupancy_frames"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    upload_id = Column(
+        String(36),
+        ForeignKey("uploads.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sample_index = Column(Integer, nullable=False)
+    timestamp_seconds = Column(Float, nullable=False)
+    status = Column(String(30), nullable=False, index=True)
+    person_count = Column(Integer, nullable=True)
+    mean_confidence = Column(Float, nullable=True)
+    max_confidence = Column(Float, nullable=True)
+    detections = Column(JSON, nullable=False, default=list)
+    quality_flags = Column(JSON, nullable=False, default=list)
+    error_message = Column(Text, nullable=True)
+    evidence_path = Column(String(512), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    upload = relationship("Upload", back_populates="occupancy_frames")
+
+    __table_args__ = (
+        UniqueConstraint("upload_id", "sample_index", name="uq_occupancy_upload_sample"),
+    )

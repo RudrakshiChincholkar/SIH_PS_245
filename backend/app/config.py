@@ -1,5 +1,6 @@
 import json
 import os
+import math
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import quote_plus
@@ -52,6 +53,14 @@ class Settings(BaseSettings):
     VIDEO_QUALITY_FROZEN_MIN_IDENTICAL_PAIRS: int = 3
     VIDEO_QUALITY_FROZEN_IDENTICAL_PAIR_RATIO: float = 0.85
 
+    # Part 4 CPU-only COCO person detection (Ultralytics YOLOv8n).
+    PERSON_DETECTOR_MODEL: str = "yolov8n.pt"
+    PERSON_DETECTION_CONFIDENCE: float = 0.25
+    PERSON_DETECTION_IOU: float = 0.45
+    PERSON_DETECTION_DEVICE: str = "cpu"
+    OCCUPANCY_EVIDENCE_ENABLED: bool = False
+    OCCUPANCY_EVIDENCE_MAX_FRAMES: int = 20
+
     # Test Database settings (isolated database for automated tests)
     TEST_DB_NAME: Optional[str] = "sih_attendance_test"
     TEST_DATABASE_URL: Optional[str] = None
@@ -88,6 +97,20 @@ class Settings(BaseSettings):
             return [ext.strip().lower() for ext in value.split(",") if ext.strip()]
         return [ext.lower() for ext in value]
 
+    @field_validator("PERSON_DETECTION_CONFIDENCE", "PERSON_DETECTION_IOU")
+    @classmethod
+    def validate_person_detection_threshold(cls, value):
+        if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+            raise ValueError("Person detection thresholds must be between 0 and 1.")
+        return value
+
+    @field_validator("OCCUPANCY_EVIDENCE_MAX_FRAMES")
+    @classmethod
+    def validate_evidence_frame_limit(cls, value):
+        if value < 0:
+            raise ValueError("OCCUPANCY_EVIDENCE_MAX_FRAMES cannot be negative.")
+        return value
+
     @property
     def base_dir(self) -> Path:
         """Returns the backend root directory."""
@@ -106,6 +129,14 @@ class Settings(BaseSettings):
         """Returns the dedicated directory for storing raw CSV archives and ensures it exists."""
         upload_path = Path(self.UPLOAD_DIR)
         target = (upload_path if upload_path.is_absolute() else self.base_dir / upload_path) / "csvs"
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+
+    @property
+    def occupancy_evidence_dir(self) -> Path:
+        upload_path = Path(self.UPLOAD_DIR)
+        root = upload_path if upload_path.is_absolute() else self.base_dir / upload_path
+        target = root / "occupancy-evidence"
         target.mkdir(parents=True, exist_ok=True)
         return target
 

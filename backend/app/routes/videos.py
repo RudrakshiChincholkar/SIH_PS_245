@@ -4,11 +4,12 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import Upload, VideoQualityAssessment
+from app.models import Upload, VideoQualityAssessment, VideoQualitySample
 from app.schemas import QUALITY_SAFETY_NOTE, VideoProcessResponse, VideoQualityAssessmentResponse
 from app.video_processor import VideoProcessingResult, process_video, resolve_stored_video_path
 
@@ -167,6 +168,9 @@ def process_uploaded_video(
     try:
         row = _upsert_assessment(db, upload.id, interval)
         db.flush()
+        db.query(VideoQualitySample).filter(
+            VideoQualitySample.upload_id == upload.id
+        ).delete(synchronize_session=False)
 
         if not video_path.is_file():
             missing = process_video(video_path, sample_interval_seconds=interval)
@@ -181,7 +185,21 @@ def process_uploaded_video(
                 },
             )
 
-        result = process_video(video_path, sample_interval_seconds=interval)
+        pending_quality_samples = []
+
+        def store_quality_sample(sample):
+            pending_quality_samples.append({"upload_id": upload.id, **sample})
+            if len(pending_quality_samples) >= 200:
+                db.execute(insert(VideoQualitySample), pending_quality_samples)
+                pending_quality_samples.clear()
+
+        result = process_video(
+            video_path,
+            sample_interval_seconds=interval,
+            sample_callback=store_quality_sample,
+        )
+        if pending_quality_samples:
+            db.execute(insert(VideoQualitySample), pending_quality_samples)
         if result.input_missing:
             _apply_result(row, result, processing_status="FAILED")
             db.commit()

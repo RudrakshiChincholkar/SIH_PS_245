@@ -8,7 +8,7 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Upload, VideoQualityAssessment
+from app.models import Upload, VideoQualityAssessment, VideoQualitySample
 from app.video_processor import (
     FROZEN_MIN_IDENTICAL_PAIRS,
     FLAG_COMPLETELY_BLACK,
@@ -132,6 +132,15 @@ def test_valid_textured_video_is_usable(client, db_session):
 
     stored = db_session.query(VideoQualityAssessment).filter_by(upload_id=upload_id).one()
     assert stored.overall_quality == QUALITY_USABLE
+    samples = (
+        db_session.query(VideoQualitySample)
+        .filter_by(upload_id=upload_id)
+        .order_by(VideoQualitySample.sample_index)
+        .all()
+    )
+    assert len(samples) == assessment["samples_attempted"]
+    assert samples[0].timestamp_seconds == 0.0
+    assert samples[0].status == "USABLE"
 
 
 def test_dark_footage_flags_low_light(client, db_session):

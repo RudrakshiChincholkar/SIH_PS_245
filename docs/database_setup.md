@@ -155,3 +155,29 @@ WHERE table_schema = current_schema()
 	AND table_name = 'video_quality_assessments'
 	AND column_name = 'avg_temporal_difference';
 ```
+
+### Part 4 occupancy frame table
+
+Create the additive `video_quality_samples` and `occupancy_frames` tables in the configured application database without dropping or altering existing tables:
+
+```bash
+cd /home/rudrakshi/sih-attendance-monitoring/backend
+venv/bin/python scripts/migrate_occupancy_frames.py
+venv/bin/python scripts/migrate_occupancy_frames.py --check
+venv/bin/python scripts/migrate_occupancy_frames.py --test-database
+venv/bin/python scripts/migrate_occupancy_frames.py --check --test-database
+```
+
+Both table creations use SQLAlchemy `checkfirst`; repeated invocation is safe. The quality samples are written by Part 3 at the same time as its aggregate assessment, and Part 4 reuses their timestamps and usable status. The API stores one occupancy row per upload/sample index and replaces that upload's frame results transactionally on repeat analysis.
+
+### YOLO CPU setup
+
+The backend pins `ultralytics==8.3.40`. Install PyTorch CPU wheels in the backend virtual environment, then install the project requirements:
+
+```bash
+cd /home/rudrakshi/sih-attendance-monitoring/backend
+venv/bin/python -m pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+venv/bin/python -m pip install -r requirements.txt
+```
+
+On first occupancy processing, Ultralytics downloads pretrained `yolov8n.pt` weights from its configured model source. Ensure outbound access for that first request, or set `PERSON_DETECTOR_MODEL` to a locally provisioned compatible weights file. Inference always uses CPU (`PERSON_DETECTION_DEVICE=cpu`). Default confidence is `0.25`; default NMS IoU is `0.45`. Set `OCCUPANCY_EVIDENCE_ENABLED=true` only when annotated JPEG evidence is needed; it is disabled by default and capped at 20 frames per processing run.

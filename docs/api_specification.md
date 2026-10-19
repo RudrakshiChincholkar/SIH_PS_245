@@ -241,3 +241,25 @@ Return the stored quality assessment.
 
 **Errors:**
 - `HTTP 404 Not Found`: the upload does not exist, or no assessment has been stored yet.
+
+---
+
+## 4. Frame-Level Person Counts (Part 4)
+
+These endpoints run the CPU-only pretrained YOLOv8n COCO detector for person class 0. Run Part 3 first; the saved quality sample interval controls the occupancy sample timestamps. Unusable frames are stored with a null `person_count`, never as zero. No identities are tracked across frames.
+
+### `POST /api/videos/{upload_id}/occupancy/process`
+
+Process the registered video at the quality pipeline's sample interval. Results are replaced atomically for repeat requests, retaining at most one record per `(upload_id, sample_index)`.
+
+Response includes `processing_status` (`COMPLETED`, `PARTIAL`, or `FAILED`), detector model, interval, and attempted/processed/unusable/failed sample counts. Individual frame results retain the detailed status and any failure message.
+
+Errors: `404` for an unknown upload, `400` for a non-video upload or invalid stored name, `409` if Part 3 has not completed, `422` if the registered file is missing, and `503` if detector package/weights are unavailable. Database persistence failures return `500` and roll back frame rows.
+
+### `GET /api/videos/{upload_id}/occupancy`
+
+Return paginated frame-level results (`limit` 1–500, default 100; `offset` default 0), ordered by sample index. Each item contains timestamp, `status`, nullable `person_count`, confidence summaries, detections (`person` class and `[x1,y1,x2,y2]` box), quality flags, and optional evidence URL. When enabled, evidence is stamped with `YOLO person count: N`; source video may itself contain overlays, which are not detector output.
+
+### `GET /api/videos/{upload_id}/occupancy/frames/{sample_index}/evidence`
+
+Serve an annotated JPEG only when evidence is enabled and that frame is usable with a count. Evidence is disabled by default and bounded by `OCCUPANCY_EVIDENCE_MAX_FRAMES`.

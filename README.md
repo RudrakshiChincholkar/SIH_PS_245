@@ -3,8 +3,8 @@
 
 Privacy-preserving automated attendance verification for government-funded skill-development training centres. Compares classroom physical occupancy estimated from CCTV with biometric attendance records from AEBAS to detect proxy attendance, ghost beneficiaries, and discrepancy patterns.
 
-> **Current Implementation Phase**: **Part 3 — Recorded video quality assessment**.
-> Parts 1–2 (health checks, video/CSV ingestion, upload registry) remain operational. Part 3 decodes registered recordings, samples frames, and stores footage-legibility results. It does **not** count people or infer occupancy. Person detection belongs to later phases.
+> **Current Implementation Phase**: **Part 4 — Frame-level person detection and occupancy counts**.
+> Parts 1–3 (health checks, video/CSV ingestion, registry, and footage quality) remain operational. Part 4 counts COCO person detections on usable sampled frames only. It does not recognize identities, aggregate five-minute occupancy, compare with AEBAS, or generate discrepancies or alerts.
 
 ---
 
@@ -20,9 +20,12 @@ sih-attendance-monitoring/
 │   │   ├── schemas.py             # Pydantic schemas (no server path leakage)
 │   │   ├── validators.py          # Chunked video streaming, magic bytes & CSV validators
 │   │   ├── video_processor.py     # Incremental decode, sampling, quality heuristics
+│   │   ├── person_detector.py     # CPU YOLOv8n COCO person detector
+│   │   ├── occupancy_processor.py # Frame-level counts at quality sample times
 │   │   ├── routes/
 │   │   │   ├── ingest.py          # Ingestion endpoints (/api/ingest/*)
-│   │   │   └── videos.py          # Quality analysis endpoints (/api/videos/*)
+│   │   │   ├── videos.py          # Quality analysis endpoints (/api/videos/*)
+│   │   │   └── occupancy.py       # Frame-level person counts and evidence
 │   │   └── main.py                # FastAPI routes, CORS, and health checks
 │   ├── tests/
 │   │   ├── conftest.py            # Pytest test fixtures (isolated test database)
@@ -166,3 +169,21 @@ Analysis uses OpenCV (`opencv-python-headless`) on a resized 320×180 grayscale 
 | No decoded frames / unreadable input | `UNREADABLE` | UNUSABLE |
 
 A single identical frame pair does **not** conclude that a camera is frozen. Unusable or degraded footage must **never** be treated as zero classroom occupancy.
+
+## 7. Part 4 Person Detection
+
+Frame-level occupancy uses Ultralytics **YOLOv8n** pretrained on COCO, class ID 0 (`person`), on CPU. The detector applies confidence filtering (default 0.25) and IoU NMS (default 0.45). Weights `yolov8n.pt` are downloaded by Ultralytics on the first processing request unless `PERSON_DETECTOR_MODEL` points to a local weights file. No GPU is required. See `docs/database_setup.md` for installation and additive schema migration.
+
+Run after installing the backend requirements and making the model weights available:
+
+```bash
+cd backend
+venv/bin/python scripts/migrate_occupancy_frames.py
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+1. Complete Part 3 first: `POST /api/videos/{upload_id}/process`.
+2. Count sampled frames: `POST /api/videos/{upload_id}/occupancy/process`.
+3. Retrieve results: `GET /api/videos/{upload_id}/occupancy`.
+
+Frame results store the sampled timestamp, status, count (null when unusable or failed), confidence summaries, per-person bounding boxes, and optional evidence reference. Annotated JPEG evidence is off by default (`OCCUPANCY_EVIDENCE_ENABLED=false`) and capped when enabled. This phase does not perform identity matching, five-minute aggregation, AEBAS comparison, discrepancy analysis, or alerting. Model performance must be evaluated against manually labelled frames; see `docs/person_detection_evaluation.md`.

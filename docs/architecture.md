@@ -83,6 +83,8 @@ Part 2 introduces the secure multi-modal input ingestion layer:
 - **`attendance_records`**: Many-to-1 with `uploads`. Stores `batch_id`, `person_ref`, `punch_in` (TIMESTAMPTZ UTC), `punch_out` (TIMESTAMPTZ UTC). Unique on `(batch_id, person_ref, punch_in)`.
 - **`schedule_records`**: Many-to-1 with `uploads`. Stores `batch_id`, `classroom_id`, `class_date`, `start_time`, `end_time`, `enrolled_count`. Unique on `(batch_id, classroom_id, class_date, start_time)`.
 - **`video_quality_assessments`**: 1-to-1 with `uploads`. Stores processing status, overall quality (`USABLE` / `DEGRADED` / `UNUSABLE`), metadata, sample counts, decode ratio, blur/luminance scores, JSON quality flags, diagnostics, and completion time. Repeat analysis updates the same row.
+- **`video_quality_samples`**: Many-to-1 with `uploads`. Stores the exact timestamp and per-frame Part 3 usability result so Part 4 can reuse the quality pipeline's sampled frames. Unique on `(upload_id, sample_index)`.
+- **`occupancy_frames`**: Many-to-1 with `uploads`. Stores one sampled-frame result with timestamp, status, nullable person count, confidence summary, person boxes, quality flags, and optional annotated-evidence path. Unique on `(upload_id, sample_index)`; repeat processing replaces the frame result set transactionally.
 
 ---
 
@@ -92,4 +94,8 @@ Part 3 adds an incremental decoder (`backend/app/video_processor.py`). The file 
 
 OpenCV reads frames sequentially (bounded memory), samples on a time grid (default 10 seconds), and computes Laplacian variance, mean grayscale luminance, and mean absolute difference between consecutive samples on a 320×180 grayscale canvas. Heuristics are preliminary and content-dependent.
 
-Safety rule: failed, dark, blurred, frozen, or unreadable footage is missing visual evidence. It is never occupancy = 0. Person detection is out of scope for Part 3.
+Safety rule: failed, dark, blurred, frozen, or unreadable footage is missing visual evidence. It is never occupancy = 0.
+
+## 7. Part 4 Frame-Level Person Counts
+
+Part 4 runs Ultralytics YOLOv8n COCO person class only (`classes=[0]`) with CPU inference. The registered video path is reused and timestamps follow the Part 3 interval. Per-frame quality checks prevent unusable samples from entering the detector. There is no face recognition, identity tracking, five-minute aggregation, expected attendance calculation, discrepancy logic, or alerting in this part.

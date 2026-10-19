@@ -14,4 +14,6 @@ data/
 *.mp4
 *.avi
 *.mov
+*.pt
+weights/
 

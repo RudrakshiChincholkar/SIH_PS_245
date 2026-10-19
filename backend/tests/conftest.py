@@ -44,7 +44,7 @@ def db_session():
         # Clean up test data
         with test_engine.begin() as conn:
             conn.execute(text(
-                "TRUNCATE TABLE video_quality_assessments, schedule_records, "
+                "TRUNCATE TABLE occupancy_frames, video_quality_samples, video_quality_assessments, schedule_records, "
                 "attendance_records, video_metadata, uploads CASCADE;"
             ))
 

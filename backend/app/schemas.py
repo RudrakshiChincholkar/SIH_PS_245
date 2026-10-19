@@ -97,3 +97,41 @@ class VideoQualityAssessmentResponse(BaseModel):
 class VideoProcessResponse(BaseModel):
     message: str
     assessment: VideoQualityAssessmentResponse
+
+
+class OccupancyFrameResponse(BaseModel):
+    id: int
+    upload_id: str
+    sample_index: int
+    timestamp_seconds: float
+    status: str
+    person_count: Optional[int] = None
+    mean_confidence: Optional[float] = None
+    max_confidence: Optional[float] = None
+    detections: List[dict] = Field(default_factory=list)
+    quality_flags: List[str] = Field(default_factory=list)
+    error_message: Optional[str] = None
+    evidence_url: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OccupancyProcessResponse(BaseModel):
+    message: str
+    upload_id: str
+    processing_status: str
+    detector_model: str
+    sample_interval_seconds: float
+    samples_attempted: int
+    samples_processed: int
+    samples_unusable: int
+    samples_failed: int
+
+
+class OccupancyFrameListResponse(BaseModel):
+    upload_id: str
+    items: List[OccupancyFrameResponse]
+    total: int
+    limit: int
+    offset: int

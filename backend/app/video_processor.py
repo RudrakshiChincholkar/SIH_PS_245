@@ -30,7 +30,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence
 
 import cv2
 import numpy as np
@@ -97,6 +97,17 @@ class VideoProcessingResult:
     diagnostic_message: str = ""
 
 
+@dataclass
+class FrameQualityResult:
+    blur_score: float
+    luminance: float
+    flags: List[str] = field(default_factory=list)
+
+    @property
+    def usable(self) -> bool:
+        return not self.flags
+
+
 def resolve_stored_video_path(stored_filename: str, upload_dir: Path) -> Path:
     """
     Resolve a video path from the upload record's stored filename only.
@@ -145,6 +156,23 @@ def _to_analysis_gray(frame: np.ndarray) -> np.ndarray:
 def _mean_abs_diff(prev_gray: np.ndarray, gray: np.ndarray) -> float:
     diff = cv2.absdiff(prev_gray, gray)
     return float(np.mean(diff.astype(np.float32)))
+
+
+def assess_frame_quality(frame: np.ndarray) -> FrameQualityResult:
+    """Apply Part 3's per-frame legibility thresholds to one decoded frame."""
+    gray = _to_analysis_gray(frame)
+    blur_score = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    luminance = float(np.mean(gray.astype(np.float32)))
+    flags: List[str] = []
+    if blur_score < BLUR_LAPLACIAN_THRESHOLD:
+        flags.append(FLAG_POTENTIAL_BLUR)
+    if luminance < LOW_LIGHT_LUMINANCE_THRESHOLD:
+        flags.append(FLAG_LOW_LIGHT)
+    if luminance > OVEREXPOSURE_LUMINANCE_THRESHOLD:
+        flags.append(FLAG_OVEREXPOSURE)
+    if luminance <= BLACK_LUMINANCE_THRESHOLD:
+        flags.append(FLAG_COMPLETELY_BLACK)
+    return FrameQualityResult(blur_score, luminance, flags)
 
 
 def _unusable_result(
@@ -278,6 +306,7 @@ def classify_from_metrics(
 def process_video(
     video_path: Path,
     sample_interval_seconds: float = 10.0,
+    sample_callback: Optional[Callable[[Dict[str, object]], None]] = None,
 ) -> VideoProcessingResult:
     """
     Decode a recording incrementally and sample frames on a time grid.
@@ -315,11 +344,21 @@ def process_video(
     decoded_frames = 0
     capture_opened = False
     invalid_timing_metadata = False
+    sample_index = 0
 
     try:
         cap = cv2.VideoCapture(str(path))
         capture_opened = bool(cap is not None and cap.isOpened())
         if not capture_opened:
+            if sample_callback:
+                sample_callback({
+                    "sample_index": 0,
+                    "timestamp_seconds": 0.0,
+                    "status": "DECODE_FAILED",
+                    "blur_score": None,
+                    "luminance": None,
+                    "quality_flags": [FLAG_DECODE_FAILURE],
+                })
             return _unusable_result(
                 sample_interval_seconds,
                 capture_opened=False,
@@ -354,6 +393,15 @@ def process_video(
                 if reported_frame_count is not None and frame_index < reported_frame_count:
                     samples_attempted += 1
                     samples_failed += 1
+                    if sample_callback:
+                        sample_callback({
+                            "sample_index": sample_index,
+                            "timestamp_seconds": frame_index / fps if fps else next_sample_t,
+                            "status": "DECODE_FAILED",
+                            "blur_score": None,
+                            "luminance": None,
+                            "quality_flags": [FLAG_DECODE_FAILURE],
+                        })
                 break
             decoded_frames += 1
 
@@ -366,9 +414,10 @@ def process_video(
             if sample_due:
                 samples_attempted += 1
                 try:
+                    frame_quality = assess_frame_quality(frame)
                     gray = _to_analysis_gray(frame)
-                    blur = float(cv2.Laplacian(gray, cv2.CV_64F).var())
-                    lum = float(np.mean(gray.astype(np.float32)))
+                    blur = frame_quality.blur_score
+                    lum = frame_quality.luminance
                     if prev_gray is not None:
                         temporal_pairs += 1
                         mad = _mean_abs_diff(prev_gray, gray)
@@ -380,8 +429,27 @@ def process_video(
                     blur_score_sum += blur
                     luminance_sum += lum
                     samples_successful += 1
+                    if sample_callback:
+                        sample_callback({
+                            "sample_index": sample_index,
+                            "timestamp_seconds": timestamp,
+                            "status": "USABLE" if frame_quality.usable else "UNUSABLE",
+                            "blur_score": blur,
+                            "luminance": lum,
+                            "quality_flags": list(frame_quality.flags),
+                        })
                 except Exception:
                     samples_failed += 1
+                    if sample_callback:
+                        sample_callback({
+                            "sample_index": sample_index,
+                            "timestamp_seconds": timestamp,
+                            "status": "DECODE_FAILED",
+                            "blur_score": None,
+                            "luminance": None,
+                            "quality_flags": [FLAG_DECODE_FAILURE],
+                        })
+                sample_index += 1
                 next_sample_t += sample_interval_seconds
 
             # Drop the BGR frame immediately; only prev_gray is retained.
@@ -389,6 +457,15 @@ def process_video(
             frame_index += 1
 
         if decoded_frames == 0:
+            if sample_callback and sample_index == 0 and not reported_frame_count:
+                sample_callback({
+                    "sample_index": 0,
+                    "timestamp_seconds": 0.0,
+                    "status": "DECODE_FAILED",
+                    "blur_score": None,
+                    "luminance": None,
+                    "quality_flags": [FLAG_DECODE_FAILURE],
+                })
             return _unusable_result(
                 sample_interval_seconds,
                 capture_opened=True,
